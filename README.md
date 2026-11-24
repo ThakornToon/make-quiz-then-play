@@ -28,7 +28,12 @@ Designed for educators and learners, **Quiz CLI** supports reading passages with
 - **Interactive Quiz Runner**:
   - Intuitive navigation: step forward/backward, jump directly to any question, change or clear answers.
   - Unanswered question alerts before final submission.
+  - **Cancel mid-quiz** (`q` / `quit` / `cancel`) to abort without saving — with confirmation prompt.
   - Instant on-screen grading summary and exported report.
+- **Cancel / Go Back at Every Step**:
+  - Every selection menu (quiz, question, group, file) supports `0` to cancel and return.
+  - Create-quiz flow supports `cancel` to discard unsaved work.
+  - Move operations safely restore data to its original position when cancelled.
 
 ---
 
@@ -95,6 +100,7 @@ When taking a quiz, use the following terminal commands:
 | `<` | Move to previous question |
 | `>` | Move to next question |
 | `s` | Submit quiz (warns if any question is unanswered) |
+| `q` / `quit` / `cancel` / `ยกเลิก` | Abort quiz and return to main menu (with confirmation; answers are **not** saved) |
 | `?` / `help` | Show in-game command assistance |
 
 ---
@@ -122,13 +128,15 @@ quizzz/
 
 ## 🛠️ Main Menu Options
 
-1. **1) เพิ่ม quiz (Create Quiz)**: Create single questions or grouped questions with reading passages. Supports multi-line input (terminated with `.`).
-2. **2) ทำ quiz (Take Quiz)**: Select a quiz, optionally shuffle questions, and take the quiz interactively.
-3. **3) แก้ไข quiz (Edit Quiz)**: Edit title, prompts, choices, explanations, shuffle settings, reorder questions/blocks, or delete questions.
+1. **1) เพิ่ม quiz (Create Quiz)**: Create single questions or grouped questions with reading passages. Supports multi-line input (terminated with `.`). Use `cancel` or `x` to abort creation without saving.
+2. **2) ทำ quiz (Take Quiz)**: Select a quiz, optionally shuffle questions, and take the quiz interactively. Use `q` to abort mid-quiz.
+3. **3) แก้ไข quiz (Edit Quiz)**: Edit title, prompts, choices, explanations, shuffle settings, reorder questions/blocks, or delete questions. All sub-menus support `0` to cancel.
 4. **4) ตรวจไฟล์คำตอบ (Grade Submission)**: Cross-verify a student submission file against the master quiz and produce an itemized score report.
 5. **5) ส่งออก quiz สำหรับนักเรียน (Export Student Copy)**: Generate a clean, answer-free JSON copy into `exports/`.
 6. **6) ลบ quiz (Delete Quiz)**: Remove an existing quiz with confirmation.
 7. **0) ออกจากโปรแกรม (Exit)**.
+
+> **Tip:** At any quiz or file selection prompt, enter `0` to cancel and return to the previous menu.
 
 ---
 

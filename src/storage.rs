@@ -39,7 +39,12 @@ pub fn select_loaded_quiz(prompt_text: &str) -> AppResult<Option<LoadedQuiz>> {
     for (index, item) in quizzes.iter().enumerate() {
         println!("{}. {} ({})", index + 1, item.quiz.title, item.path.display());
     }
-    let selected = read_number_in_range(prompt_text, 1, quizzes.len())?;
+    println!("0. ยกเลิก / กลับเมนูหลัก");
+    let selected = read_number_in_range(prompt_text, 0, quizzes.len())?;
+    if selected == 0 {
+        println!("ยกเลิก กลับสู่เมนูหลัก");
+        return Ok(None);
+    }
     Ok(Some(quizzes.into_iter().nth(selected - 1).unwrap()))
 }
 

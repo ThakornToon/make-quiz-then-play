@@ -16,7 +16,7 @@ pub fn create_quiz() -> AppResult<()> {
     let mut blocks = Vec::new();
 
     loop {
-        println!("\nเพิ่มเนื้อหา: [q] โจทย์เดี่ยว  [g] กลุ่ม  [done] บันทึก");
+        println!("\nเพิ่มเนื้อหา: [q] โจทย์เดี่ยว  [g] กลุ่ม  [done] บันทึก  [cancel] ยกเลิก");
         match prompt("เลือก: ")?.trim().to_lowercase().as_str() {
             // โจทย์เดี่ยวจะกลายเป็นหนึ่งบล็อกที่สลับตำแหน่งได้
             "q" => blocks.push(QuizBlock::Question {
@@ -44,7 +44,17 @@ pub fn create_quiz() -> AppResult<()> {
             // ป้องกันไม่ให้บันทึก quiz ที่ไม่มีโจทย์
             "done" if !blocks.is_empty() => break,
             "done" => println!("ต้องเพิ่มโจทย์อย่างน้อยหนึ่งข้อ"),
-            _ => println!("กรุณาเลือก q, g หรือ done"),
+            "cancel" | "x" => {
+                if blocks.is_empty()
+                    || read_yes_no(
+                        "มีข้อมูลที่กรอกไว้แล้ว ยืนยันยกเลิกโดยไม่บันทึกหรือไม่? (y/n): ",
+                    )?
+                {
+                    println!("ยกเลิกการสร้าง quiz");
+                    return Ok(());
+                }
+            }
+            _ => println!("กรุณาเลือก q, g, done หรือ cancel"),
         }
     }
 
@@ -129,14 +139,18 @@ pub fn delete_quiz() -> AppResult<()> {
 }
 
 /// แสดงโจทย์พร้อมตำแหน่งปัจจุบัน แล้วคืนตำแหน่งที่ผู้ใช้เลือกในโครงสร้างข้อมูล
-fn select_question_location(quiz: &Quiz) -> AppResult<QuestionLocation> {
+fn select_question_location(quiz: &Quiz) -> AppResult<Option<QuestionLocation>> {
     let locations = quiz.question_locations();
     if locations.is_empty() {
         return Err("quiz นี้ไม่มีโจทย์".into());
     }
     display_questions(quiz, &locations);
-    let selected = read_number_in_range("เลือกหมายเลขโจทย์: ", 1, locations.len())?;
-    Ok(locations[selected - 1])
+    println!("0. ยกเลิก");
+    let selected = read_number_in_range("เลือกหมายเลขโจทย์: ", 0, locations.len())?;
+    if selected == 0 {
+        return Ok(None);
+    }
+    Ok(Some(locations[selected - 1]))
 }
 
 /// แสดงโจทย์ทุกข้อแบบแบนพร้อมชื่อกลุ่ม เพื่อให้เลือกได้ทั้งโจทย์เดี่ยวและโจทย์ย่อย
@@ -166,7 +180,10 @@ fn display_questions(quiz: &Quiz, locations: &[QuestionLocation]) {
 
 /// แก้ prompt, choice/เฉลย, คำอธิบาย หรือการสลับ choice ของโจทย์ที่เลือก
 fn edit_question(quiz: &mut Quiz) -> AppResult<()> {
-    let location = select_question_location(quiz)?;
+    let Some(location) = select_question_location(quiz)? else {
+        println!("ยกเลิก");
+        return Ok(());
+    };
     loop {
         println!("\nแก้โจทย์:");
         println!("1) ข้อความโจทย์");
@@ -314,7 +331,9 @@ fn add_question(quiz: &mut Quiz) -> AppResult<()> {
     println!("1) เพิ่มเป็นโจทย์เดี่ยวท้าย quiz");
     println!("2) เพิ่มท้ายกลุ่มที่มีอยู่");
     println!("3) สร้างกลุ่มใหม่พร้อมโจทย์");
+    println!("0) ยกเลิก");
     match prompt("เลือก: ")?.trim() {
+        "0" => return Ok(()),
         "1" => quiz.blocks.push(QuizBlock::Question {
             question: read_question()?,
         }),
@@ -324,7 +343,10 @@ fn add_question(quiz: &mut Quiz) -> AppResult<()> {
                 println!("ยังไม่มีกลุ่มให้เพิ่มโจทย์");
                 return Ok(());
             }
-            let block_index = select_group(quiz, &groups)?;
+            let Some(block_index) = select_group(quiz, &groups)? else {
+                println!("ยกเลิก");
+                return Ok(());
+            };
             let question = read_question()?;
             if let QuizBlock::Group { questions, .. } = &mut quiz.blocks[block_index] {
                 questions.push(question);
@@ -354,7 +376,12 @@ fn delete_question(quiz: &mut Quiz) -> AppResult<()> {
         return Ok(());
     }
     display_questions(quiz, &locations);
-    let selected = read_number_in_range("เลือกหมายเลขโจทย์: ", 1, locations.len())?;
+    println!("0. ยกเลิก");
+    let selected = read_number_in_range("เลือกหมายเลขโจทย์: ", 0, locations.len())?;
+    if selected == 0 {
+        println!("ยกเลิก");
+        return Ok(());
+    }
     let location = locations[selected - 1];
     let question = quiz
         .question_at(location)
@@ -391,16 +418,25 @@ fn delete_question(quiz: &mut Quiz) -> AppResult<()> {
 
 /// ย้ายโจทย์เดี่ยว/โจทย์ในกลุ่มไปยังตำแหน่งใหม่และเลือกรูปแบบปลายทางได้
 fn move_question(quiz: &mut Quiz) -> AppResult<()> {
-    let source = select_question_location(quiz)?;
+    let Some(source) = select_question_location(quiz)? else {
+        println!("ยกเลิก");
+        return Ok(());
+    };
     let question = take_question(quiz, source);
     let groups = group_block_indices(quiz);
     println!("ย้ายโจทย์ไปที่ใด?");
+    println!("0) ยกเลิก (โจทย์จะถูกเพิ่มกลับเป็นโจทย์เดี่ยวท้าย quiz)");
     println!("1) เป็นโจทย์เดี่ยว");
     if !groups.is_empty() {
         println!("2) เข้าไปในกลุ่ม");
     }
     let destination =
-        read_number_in_range("เลือกปลายทาง: ", 1, if groups.is_empty() { 1 } else { 2 })?;
+        read_number_in_range("เลือกปลายทาง: ", 0, if groups.is_empty() { 1 } else { 2 })?;
+    if destination == 0 {
+        quiz.blocks.push(QuizBlock::Question { question });
+        println!("ยกเลิกการย้าย โจทย์ถูกเพิ่มกลับเป็นโจทย์เดี่ยวท้าย quiz");
+        return Ok(());
+    }
     match destination {
         1 => {
             display_blocks(quiz);
@@ -413,7 +449,11 @@ fn move_question(quiz: &mut Quiz) -> AppResult<()> {
                 .insert(position - 1, QuizBlock::Question { question });
         }
         2 if !groups.is_empty() => {
-            let block_index = select_group(quiz, &groups)?;
+            let Some(block_index) = select_group(quiz, &groups)? else {
+                quiz.blocks.push(QuizBlock::Question { question });
+                println!("ยกเลิกการย้าย โจทย์ถูกเพิ่มกลับเป็นโจทย์เดี่ยวท้าย quiz");
+                return Ok(());
+            };
             let group_len = match &quiz.blocks[block_index] {
                 QuizBlock::Group { questions, .. } => questions.len(),
                 QuizBlock::Question { .. } => unreachable!("ต้องเลือกกลุ่ม"),
@@ -453,14 +493,26 @@ fn move_block(quiz: &mut Quiz) -> AppResult<()> {
         return Ok(());
     }
     display_blocks(quiz);
-    let source = read_number_in_range("เลือกบล็อกที่ต้องการย้าย: ", 1, quiz.blocks.len())? - 1;
+    println!("0. ยกเลิก");
+    let source = read_number_in_range("เลือกบล็อกที่ต้องการย้าย: ", 0, quiz.blocks.len())?;
+    if source == 0 {
+        println!("ยกเลิกการย้ายบล็อก");
+        return Ok(());
+    }
+    let source = source - 1;
     let block = quiz.blocks.remove(source);
     display_blocks(quiz);
+    println!("0. ยกเลิก (บล็อกจะถูกวางกลับที่เดิม)");
     let position = read_number_in_range(
         "แทรกก่อนบล็อกหมายเลขใด (หรือเลือกหลังสุด): ",
-        1,
+        0,
         quiz.blocks.len() + 1,
     )?;
+    if position == 0 {
+        quiz.blocks.insert(source, block);
+        println!("ยกเลิกการย้าย บล็อกถูกวางกลับที่เดิม");
+        return Ok(());
+    }
     quiz.blocks.insert(position - 1, block);
     Ok(())
 }
@@ -493,15 +545,19 @@ fn group_block_indices(quiz: &Quiz) -> Vec<usize> {
 }
 
 /// แสดงรายชื่อกลุ่มและคืน index ของกลุ่มที่ผู้ใช้เลือก
-fn select_group(quiz: &Quiz, groups: &[usize]) -> AppResult<usize> {
+fn select_group(quiz: &Quiz, groups: &[usize]) -> AppResult<Option<usize>> {
     for (index, &block_index) in groups.iter().enumerate() {
         if let QuizBlock::Group {title, questions, ..} = &quiz.blocks[block_index]
         {
             println!("{}. {} ({} ข้อ)", index + 1, title, questions.len());
         }
     }
-    let selected = read_number_in_range("เลือกกลุ่ม: ", 1, groups.len())?;
-    Ok(groups[selected - 1])
+    println!("0. ยกเลิก");
+    let selected = read_number_in_range("เลือกกลุ่ม: ", 0, groups.len())?;
+    if selected == 0 {
+        return Ok(None);
+    }
+    Ok(Some(groups[selected - 1]))
 }
 
 /// แก้ชื่อและบทความของกลุ่มที่เลือกโดยไม่เปลี่ยนโจทย์ย่อย
@@ -511,7 +567,10 @@ fn edit_group(quiz: &mut Quiz) -> AppResult<()> {
         println!("quiz นี้ยังไม่มีกลุ่ม");
         return Ok(());
     }
-    let block_index = select_group(quiz, &groups)?;
+    let Some(block_index) = select_group(quiz, &groups)? else {
+        println!("ยกเลิก");
+        return Ok(());
+    };
     let QuizBlock::Group {
         title,
         passage,

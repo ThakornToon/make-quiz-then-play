@@ -41,7 +41,12 @@ pub fn grade_submission() -> AppResult<()> {
     for (index, path) in submissions.iter().enumerate() {
         println!("{}. {}", index + 1, path.display());
     }
-    let selected = read_number_in_range("เลือกไฟล์คำตอบ: ", 1, submissions.len())?;
+    println!("0. ยกเลิก / กลับเมนูหลัก");
+    let selected = read_number_in_range("เลือกไฟล์คำตอบ: ", 0, submissions.len())?;
+    if selected == 0 {
+        println!("ยกเลิก กลับสู่เมนูหลัก");
+        return Ok(());
+    }
     let submission: AnswerSubmission = serde_json::from_reader(File::open(&submissions[selected - 1])?)?;
 
     validate_submission_matches_quiz(&submission, &key_quiz)?;
@@ -70,7 +75,7 @@ fn run_quiz(quiz: &Quiz, student_name: Option<String>, shuffle_questions: bool) 
 
     loop {
         display_question(quiz, current, &questions, &choice_orders, &answers);
-        println!("คำสั่ง: เลข choice ตอบ | c ลบคำตอบ | j <ข้อ> ไปยังข้อ | < ก่อนหน้า | > ถัดไป | s ส่งตรวจ | ? ช่วยเหลือ");
+        println!("คำสั่ง: เลข choice ตอบ | c ลบคำตอบ | j <ข้อ> ไปยังข้อ | < ก่อนหน้า | > ถัดไป | s ส่งตรวจ | q ยกเลิก | ? ช่วยเหลือ");
         let command = prompt("> ")?;
         let command = command.trim();
         // คำสั่งเลื่อนข้อจะไม่ทำให้ตำแหน่งปัจจุบันออกนอกช่วง
@@ -116,8 +121,14 @@ fn run_quiz(quiz: &Quiz, student_name: Option<String>, shuffle_questions: bool) 
             }
             "?" | "help" => println!(
                 "วิธีใช้: พิมพ์เลข choice เพื่อตอบ, c เพื่อลบคำตอบข้อนี้, j <ข้อ> เพื่อไปข้อที่ระบุ, \
-                 < หรือ > เพื่อเลื่อนข้อ, s เพื่อส่งตรวจ"
+                 < หรือ > เพื่อเลื่อนข้อ, s เพื่อส่งตรวจ, q เพื่อยกเลิกและกลับเมนูหลัก"
             ),
+            "q" | "quit" | "cancel" | "ยกเลิก" => {
+                if read_yes_no("ยืนยันยกเลิกการทำข้อสอบหรือไม่? (คำตอบจะไม่ถูกบันทึก) (y/n): ")? {
+                    println!("ยกเลิกการทำข้อสอบแล้ว กลับสู่เมนูหลัก");
+                    return Ok(());
+                }
+            }
             _ => match command.parse::<usize>() {
                 // แปลงเลข choice ที่เห็นบนหน้าจอกลับเป็น index ของ choice เดิม
                 Ok(choice) if choice > 0 && choice <= choice_orders[current].len() => {
