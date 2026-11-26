@@ -32,6 +32,7 @@ Designed for educators and learners, **Quiz CLI** supports reading passages with
   - Instant on-screen grading summary and exported report.
 - **Cancel / Go Back at Every Step**:
   - Every selection menu (quiz, question, group, file) supports `0` to cancel and return.
+  - Any text/data input prompt (quiz title, question prompt, choices, explanation, student name, etc.) supports `:q` or `/cancel` to abort the current step and go back.
   - Create-quiz flow supports `cancel` to discard unsaved work.
   - Move operations safely restore data to its original position when cancelled.
 
@@ -136,7 +137,7 @@ quizzz/
 6. **6) ลบ quiz (Delete Quiz)**: Remove an existing quiz with confirmation.
 7. **0) ออกจากโปรแกรม (Exit)**.
 
-> **Tip:** At any quiz or file selection prompt, enter `0` to cancel and return to the previous menu.
+> **Tip:** At any quiz or file selection prompt, enter `0` to cancel and return to the previous menu. During any text or data input step (such as typing a title, question, choice, or explanation), type `:q` or `/cancel` to cancel the current step and go back.
 
 ---
 

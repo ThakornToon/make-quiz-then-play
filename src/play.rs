@@ -3,7 +3,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::input::{prompt, read_number_in_range, read_yes_no};
+use crate::input::{
+    prompt, prompt_or_cancel, read_number_in_range, read_yes_no, read_yes_no_or_cancel,
+};
 use crate::model::{
     validate_quiz, AnswerSubmission, Question, QuestionLocation, Quiz, QuizBlock, SubmittedAnswer,
 };
@@ -17,9 +19,20 @@ pub fn take_quiz() -> AppResult<()> {
         return Ok(());
     };
     validate_quiz(&quiz)?;
-    let student_name = prompt("ชื่อผู้ทำ (เว้นว่างได้): ")?.trim().to_string();
+    let Some(student_name_raw) =
+        prompt_or_cancel("ชื่อผู้ทำ (เว้นว่างได้, พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")?
+    else {
+        println!("ยกเลิกการทำข้อสอบ");
+        return Ok(());
+    };
+    let student_name = student_name_raw.trim().to_string();
     let student_name = (!student_name.is_empty()).then_some(student_name);
-    let shuffle_questions = read_yes_no("สลับลำดับโจทย์ (สลับเป็นกลุ่มทั้งก้อน) หรือไม่? (y/n): ")?;
+    let Some(shuffle_questions) =
+        read_yes_no_or_cancel("สลับลำดับโจทย์ (สลับเป็นกลุ่มทั้งก้อน) หรือไม่? (y/n): ")?
+    else {
+        println!("ยกเลิกการทำข้อสอบ");
+        return Ok(());
+    };
     run_quiz(&quiz, student_name, shuffle_questions)
 }
 

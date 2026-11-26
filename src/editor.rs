@@ -1,6 +1,6 @@
 use crate::input::{
-    prompt, prompt_nonempty, read_multiline, read_number_in_range, read_question,
-    read_required_multiline, read_yes_no,
+    prompt, prompt_nonempty, read_multiline, read_number_in_range, read_number_in_range_or_cancel,
+    read_question, read_required_multiline, read_yes_no,
 };
 use crate::model::{
     remove_answer_key, validate_quiz, Question, QuestionLocation, Quiz, QuizBlock, MAX_CHOICES,
@@ -12,34 +12,63 @@ use crate::AppResult;
 
 pub fn create_quiz() -> AppResult<()> {
     // สร้าง quiz ใหม่จากชื่อและบล็อกโจทย์ที่ผู้ใช้เพิ่มเข้ามาทีละรายการ
-    let title = prompt_nonempty("ชื่อ quiz: ")?;
+    let Some(title) = prompt_nonempty("ชื่อ quiz (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")? else {
+        println!("ยกเลิกการสร้าง quiz");
+        return Ok(());
+    };
     let mut blocks = Vec::new();
 
     loop {
         println!("\nเพิ่มเนื้อหา: [q] โจทย์เดี่ยว  [g] กลุ่ม  [done] บันทึก  [cancel] ยกเลิก");
         match prompt("เลือก: ")?.trim().to_lowercase().as_str() {
             // โจทย์เดี่ยวจะกลายเป็นหนึ่งบล็อกที่สลับตำแหน่งได้
-            "q" => blocks.push(QuizBlock::Question {
-                question: read_question()?,
-            }),
+            "q" => {
+                if let Some(question) = read_question()? {
+                    blocks.push(QuizBlock::Question { question });
+                } else {
+                    println!("ยกเลิกการเพิ่มโจทย์");
+                }
+            }
             "g" => {
                 // ข้อมูลกลุ่มถูกเก็บรวมเป็นบล็อกเดียว เพื่อรักษาความสัมพันธ์และลำดับโจทย์
-                let group_title = prompt_nonempty("ชื่อกลุ่ม: ")?;
-                println!("กรอกบทความ/เนื้อหากลุ่ม จบด้วยบรรทัดที่มี . เพียงตัวเดียว");
-                let passage = read_multiline()?;
-                let count = read_number_in_range("จำนวนโจทย์ในกลุ่ม (1 - 100): ", 1, 100)?;
+                let Some(group_title) =
+                    prompt_nonempty("ชื่อกลุ่ม (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")?
+                else {
+                    println!("ยกเลิกการสร้างกลุ่ม");
+                    continue;
+                };
+                println!("กรอกบทความ/เนื้อหากลุ่ม จบด้วยบรรทัดที่มี . เพียงตัวเดียว (พิมพ์ :q หรือ /cancel เพื่อยกเลิก)");
+                let Some(passage) = read_multiline()? else {
+                    println!("ยกเลิกการสร้างกลุ่ม");
+                    continue;
+                };
+                let Some(count) =
+                    read_number_in_range_or_cancel("จำนวนโจทย์ในกลุ่ม (1 - 100): ", 1, 100)?
+                else {
+                    println!("ยกเลิกการสร้างกลุ่ม");
+                    continue;
+                };
                 let mut questions = Vec::new();
                 questions.try_reserve_exact(count)?;
+                let mut cancelled = false;
                 // อ่านโจทย์ย่อยตามลำดับ โดยยังไม่สลับลำดับภายในกลุ่ม
                 for index in 1..=count {
                     println!("\nโจทย์ที่ {index}/{count}");
-                    questions.push(read_question()?);
+                    let Some(question) = read_question()? else {
+                        cancelled = true;
+                        break;
+                    };
+                    questions.push(question);
                 }
-                blocks.push(QuizBlock::Group {
-                    title: group_title,
-                    passage,
-                    questions,
-                });
+                if cancelled {
+                    println!("ยกเลิกการสร้างกลุ่ม");
+                } else {
+                    blocks.push(QuizBlock::Group {
+                        title: group_title,
+                        passage,
+                        questions,
+                    });
+                }
             }
             // ป้องกันไม่ให้บันทึก quiz ที่ไม่มีโจทย์
             "done" if !blocks.is_empty() => break,
@@ -99,7 +128,15 @@ pub fn edit_quiz() -> AppResult<()> {
         println!("7) แก้ไขชื่อกลุ่ม/บทความ");
         println!("0) เสร็จและกลับ");
         match prompt("เลือก: ")?.trim() {
-            "1" => quiz.title = prompt_nonempty("ชื่อ quiz ใหม่: ")?,
+            "1" => {
+                if let Some(new_title) =
+                    prompt_nonempty("ชื่อ quiz ใหม่ (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")?
+                {
+                    quiz.title = new_title;
+                } else {
+                    println!("ยกเลิกการเปลี่ยนชื่อ");
+                }
+            }
             "2" => edit_question(&mut quiz)?,
             "3" => add_question(&mut quiz)?,
             "4" => delete_question(&mut quiz)?,
@@ -193,9 +230,13 @@ fn edit_question(quiz: &mut Quiz) -> AppResult<()> {
         println!("0) กลับ");
         match prompt("เลือก: ")?.trim() {
             "1" => {
-                quiz.question_at_mut(location)
-                    .expect("ตำแหน่งโจทย์ต้องมาจาก question_locations")
-                    .prompt = read_required_multiline("ข้อความโจทย์")?;
+                if let Some(new_prompt) = read_required_multiline("ข้อความโจทย์")? {
+                    quiz.question_at_mut(location)
+                        .expect("ตำแหน่งโจทย์ต้องมาจาก question_locations")
+                        .prompt = new_prompt;
+                } else {
+                    println!("ยกเลิกการแก้ไขโจทย์");
+                }
             }
             "2" => edit_choices(
                 quiz.question_at_mut(location)
@@ -246,18 +287,40 @@ fn edit_choices(question: &mut Question) -> AppResult<()> {
         println!("0) กลับ");
         match prompt("เลือก: ")?.trim() {
             "1" => {
-                let index = read_number_in_range("เลือก choice ที่จะแก้: ", 1, question.choices.len())?;
-                question.choices[index - 1] = prompt_nonempty("ข้อความ choice ใหม่: ")?;
+                let Some(index) = read_number_in_range_or_cancel(
+                    "เลือก choice ที่จะแก้ (พิมพ์ :q เพื่อยกเลิก): ",
+                    1,
+                    question.choices.len(),
+                )?
+                else {
+                    continue;
+                };
+                let Some(text) =
+                    prompt_nonempty("ข้อความ choice ใหม่ (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")?
+                else {
+                    continue;
+                };
+                question.choices[index - 1] = text;
             }
             "2" if question.choices.len() < MAX_CHOICES => {
-                question
-                    .choices
-                    .push(prompt_nonempty("ข้อความ choice ใหม่: ")?);
+                let Some(text) =
+                    prompt_nonempty("ข้อความ choice ใหม่ (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")?
+                else {
+                    continue;
+                };
+                question.choices.push(text);
             }
             "2" => println!("เพิ่ม choice ได้ไม่เกิน {MAX_CHOICES} ตัวเลือก"),
             "3" if question.choices.len() > 2 => {
-                let index =
-                    read_number_in_range("เลือก choice ที่จะลบ: ", 1, question.choices.len())? - 1;
+                let Some(index) = read_number_in_range_or_cancel(
+                    "เลือก choice ที่จะลบ (พิมพ์ :q เพื่อยกเลิก): ",
+                    1,
+                    question.choices.len(),
+                )?
+                else {
+                    continue;
+                };
+                let index = index - 1;
                 if !read_yes_no(&format!(
                     "ยืนยันลบ choice {} ({}) หรือไม่? (y/n): ",
                     index + 1,
@@ -275,13 +338,12 @@ fn edit_choices(question: &mut Question) -> AppResult<()> {
                     }
                     question.answer = if read_yes_no("ต้องการกำหนดเฉลยใหม่หรือไม่? (y/n): ")?
                     {
-                        Some(
-                            read_number_in_range(
-                                "เลือกหมายเลขเฉลยใหม่: ",
-                                1,
-                                question.choices.len(),
-                            )? - 1,
-                        )
+                        read_number_in_range_or_cancel(
+                            "เลือกหมายเลขเฉลยใหม่ (พิมพ์ :q เพื่อข้าม): ",
+                            1,
+                            question.choices.len(),
+                        )?
+                        .map(|n| n - 1)
                     } else {
                         None
                     };
@@ -291,9 +353,13 @@ fn edit_choices(question: &mut Question) -> AppResult<()> {
             }
             "3" => println!("ต้องเหลือ choice อย่างน้อย 2 ตัวเลือก"),
             "4" => {
-                question.answer = Some(
-                    read_number_in_range("หมายเลข choice ที่ถูกต้อง: ", 1, question.choices.len())? - 1,
-                );
+                if let Some(ans) = read_number_in_range_or_cancel(
+                    "หมายเลข choice ที่ถูกต้อง (พิมพ์ :q เพื่อยกเลิก): ",
+                    1,
+                    question.choices.len(),
+                )? {
+                    question.answer = Some(ans - 1);
+                }
             }
             "5" => question.answer = None,
             "0" => break,
@@ -314,9 +380,12 @@ fn edit_explanation(question: &mut Question) -> AppResult<()> {
     println!("0) กลับ");
     match prompt("เลือก: ")?.trim() {
         "1" => {
-            println!("กรอกคำอธิบายใหม่ จบด้วยบรรทัดที่มี . เพียงตัวเดียว");
-            let explanation = read_multiline()?;
-            question.explanation = (!explanation.trim().is_empty()).then_some(explanation);
+            println!("กรอกคำอธิบายใหม่ จบด้วยบรรทัดที่มี . เพียงตัวเดียว (พิมพ์ :q หรือ /cancel เพื่อยกเลิก)");
+            if let Some(explanation) = read_multiline()? {
+                question.explanation = (!explanation.trim().is_empty()).then_some(explanation);
+            } else {
+                println!("ยกเลิกการแก้ไขคำอธิบาย");
+            }
         }
         "2" => question.explanation = None,
         "0" => {}
@@ -334,9 +403,13 @@ fn add_question(quiz: &mut Quiz) -> AppResult<()> {
     println!("0) ยกเลิก");
     match prompt("เลือก: ")?.trim() {
         "0" => return Ok(()),
-        "1" => quiz.blocks.push(QuizBlock::Question {
-            question: read_question()?,
-        }),
+        "1" => {
+            if let Some(question) = read_question()? {
+                quiz.blocks.push(QuizBlock::Question { question });
+            } else {
+                println!("ยกเลิกการเพิ่มโจทย์");
+            }
+        }
         "2" => {
             let groups = group_block_indices(quiz);
             if groups.is_empty() {
@@ -347,16 +420,28 @@ fn add_question(quiz: &mut Quiz) -> AppResult<()> {
                 println!("ยกเลิก");
                 return Ok(());
             };
-            let question = read_question()?;
+            let Some(question) = read_question()? else {
+                println!("ยกเลิกการเพิ่มโจทย์");
+                return Ok(());
+            };
             if let QuizBlock::Group { questions, .. } = &mut quiz.blocks[block_index] {
                 questions.push(question);
             }
         }
         "3" => {
-            let title = prompt_nonempty("ชื่อกลุ่ม: ")?;
-            println!("กรอกบทความ/เนื้อหากลุ่ม จบด้วยบรรทัดที่มี . เพียงตัวเดียว");
-            let passage = read_multiline()?;
-            let question = read_question()?;
+            let Some(title) = prompt_nonempty("ชื่อกลุ่ม (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")? else {
+                println!("ยกเลิกการเพิ่มกลุ่ม");
+                return Ok(());
+            };
+            println!("กรอกบทความ/เนื้อหากลุ่ม จบด้วยบรรทัดที่มี . เพียงตัวเดียว (พิมพ์ :q หรือ /cancel เพื่อยกเลิก)");
+            let Some(passage) = read_multiline()? else {
+                println!("ยกเลิกการเพิ่มกลุ่ม");
+                return Ok(());
+            };
+            let Some(question) = read_question()? else {
+                println!("ยกเลิกการเพิ่มกลุ่ม");
+                return Ok(());
+            };
             quiz.blocks.push(QuizBlock::Group {
                 title,
                 passage,
@@ -440,11 +525,17 @@ fn move_question(quiz: &mut Quiz) -> AppResult<()> {
     match destination {
         1 => {
             display_blocks(quiz);
+            println!("0. ยกเลิก (โจทย์จะถูกเพิ่มกลับเป็นโจทย์เดี่ยวท้าย quiz)");
             let position = read_number_in_range(
                 "แทรกก่อนบล็อกหมายเลขใด (หรือเลือกหลังสุด): ",
-                1,
+                0,
                 quiz.blocks.len() + 1,
             )?;
+            if position == 0 {
+                quiz.blocks.push(QuizBlock::Question { question });
+                println!("ยกเลิกการย้าย โจทย์ถูกเพิ่มกลับเป็นโจทย์เดี่ยวท้าย quiz");
+                return Ok(());
+            }
             quiz.blocks
                 .insert(position - 1, QuizBlock::Question { question });
         }
@@ -458,7 +549,16 @@ fn move_question(quiz: &mut Quiz) -> AppResult<()> {
                 QuizBlock::Group { questions, .. } => questions.len(),
                 QuizBlock::Question { .. } => unreachable!("ต้องเลือกกลุ่ม"),
             };
-            let position = read_number_in_range("แทรกเป็นโจทย์ลำดับที่: ", 1, group_len + 1)?;
+            let position = read_number_in_range(
+                "แทรกเป็นโจทย์ลำดับที่ (0 เพื่อยกเลิก): ",
+                0,
+                group_len + 1,
+            )?;
+            if position == 0 {
+                quiz.blocks.push(QuizBlock::Question { question });
+                println!("ยกเลิกการย้าย โจทย์ถูกเพิ่มกลับเป็นโจทย์เดี่ยวท้าย quiz");
+                return Ok(());
+            }
             if let QuizBlock::Group { questions, .. } = &mut quiz.blocks[block_index] {
                 questions.insert(position - 1, question);
             }
@@ -583,10 +683,22 @@ fn edit_group(quiz: &mut Quiz) -> AppResult<()> {
     println!("2) แก้บทความ");
     println!("0) กลับ");
     match prompt("เลือก: ")?.trim() {
-        "1" => *title = prompt_nonempty("ชื่อกลุ่มใหม่: ")?,
+        "1" => {
+            if let Some(new_title) =
+                prompt_nonempty("ชื่อกลุ่มใหม่ (พิมพ์ :q หรือ /cancel เพื่อยกเลิก): ")?
+            {
+                *title = new_title;
+            } else {
+                println!("ยกเลิกการเปลี่ยนชื่อกลุ่ม");
+            }
+        }
         "2" => {
-            println!("กรอกบทความ จบด้วยบรรทัดที่มี . เพียงตัวเดียว");
-            *passage = read_multiline()?;
+            println!("กรอกบทความ จบด้วยบรรทัดที่มี . เพียงตัวเดียว (พิมพ์ :q หรือ /cancel เพื่อยกเลิก)");
+            if let Some(new_passage) = read_multiline()? {
+                *passage = new_passage;
+            } else {
+                println!("ยกเลิกการแก้ไขบทความ");
+            }
         }
         _ => {}
     }
